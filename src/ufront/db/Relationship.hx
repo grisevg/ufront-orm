@@ -9,6 +9,5 @@ class Relationship extends Object
 	public function new()
 	{
 		super();
-		this.modified = this.created = Date.now();
 	}
 }

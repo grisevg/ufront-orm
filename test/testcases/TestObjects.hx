@@ -45,12 +45,6 @@ class TestObjects extends DBTestClass {
 		person1.bio = "Theo is our cat.";
 		person1.id = 1; // Override one of our other rows!
 		person1.save();
-		
-		// Check `created` and `modified` are being set.
-		Assert.equals( 2, Person.manager.all().length );
-		var p1 = Person.manager.get(1);
-		Assert.equals( "Theo", p1.firstName );
-		Assert.isTrue( p1.modified.getTime() >= p1.created.getTime() );
 	}
 
 	function testToString() {

@@ -28,7 +28,7 @@ p.text = "Y U NO short lambdas, Haxe? Seriously, even Java has them.";
 p.author = jason;
 p.save();
 // Look, it has saved, has it's own ID and everything!
-trace( p.id, p.created, p.modified );
+trace( p.id );
 ```
 
 You can also fetch objects using the manager:
@@ -51,7 +51,7 @@ This includes information about how the types in `sys.db.Types` map to certain d
 
 The key differences in `ufront.db.*` compared to `sys.db.*` are:
 
-- Each model comes with `id`, `created` and `modified` fields built in.
+- Each model comes with `id` field built in.
 - Each model has a `save()` method, which calls either `insert()` or `update()` as required.
 - Objects can be serialized and shared between client and server, especially through Haxe remoting.
 - We have macro powered relationships for `BelongsTo`, `HasOne`, `HasMany` and `ManyToMany`.
@@ -89,13 +89,11 @@ Contributions:
 ufront.db.Object
 ----------------
 
-##### Extra fields: id, created, modified
+##### Extra fields: id
 
-This extends sys.db.Object as the base class all your models are built upon.  It adds 3 fields, which are to be present on every model: id:SId, created:SDateTime, modified:SDateTime.  
+This extends sys.db.Object as the base class all your models are built upon.  It adds a field `id:SId` which is to be present on every model.  
 
 Forcing an integer unique ID makes it easy for us to work with relationships and generic APIs.  I might consider changing this in future so different sorts of primary keys are allowed, or at least, facilitate a way to provide a bigger primary key if you need more than the default Integer size.
-
-The `created` and `modified` fields are timestamps, and they are updated automatically as you call `insert()`, `update()` or `save()`.  This sort of info is used often enough that it's nice to have them as part of the base class, and this is a pattern also seen in other database layers such as ActiveRecord.
 
 ##### The save() method
 

@@ -24,9 +24,7 @@ using tink.CoreApi;
  * On the server, this class extends `sys.db.Object` and adds:
  *
  * - a default unique `this.id` field (`SUId`, unsigned auto-incrementing integer)
- * - a `this.created` timestamp (`SDateTime`)
- * - a `this.modified` timestamps (`SDateTime`)
- * - modified `this.insert()` and `this.update()` methods that check validation and updates `this.created` and `this.modified` timestamps
+ * - modified `this.insert()` and `this.update()` methods that check validation
  * - a `this.save()` method that performs either `this.insert()` or `this.update()`
  * - a `this.validate()` method that checks if the object is valid. This method is filled out with validation rules by a build macro.
  * - a `this.validationErrors` property to check which errors were found in validation.
@@ -66,12 +64,6 @@ class Object #if server extends sys.db.Object #end {
 	/** A default ID. Auto-incrementing 32-bit Int. **/
 	public var id:SId;
 	
-	/** The time this record was first created. **/
-	public var created:SDateTime;
-	
-	/** The time this record was last modified. **/
-	public var modified:SDateTime;
-
 	/** A signal that is triggered after a successful save. **/
 	@:skip public var saved(get,null):Signal<Noise>;
 	@:skip var savedTrigger:SignalTrigger<Noise>;
@@ -85,12 +77,9 @@ class Object #if server extends sys.db.Object #end {
 		/**
 		 * Inserts a new record to the database.
 		 * Will throw an error if `this.validate()` fails.
-		 * Updates the "created" and "modified" timestamps before saving.
 		**/
 		override public function insert() {
 			if (validate()) {
-				created = Date.now();
-				modified = Date.now();
 				super.insert();
 				if (savedTrigger != null) savedTrigger.trigger(Noise);
 			} else {
@@ -102,14 +91,11 @@ class Object #if server extends sys.db.Object #end {
 		/**
 		 * Updates an existing record in the database.
 		 * Will throw an error if `this.validate()` fails.
-		 * Updates the "modified" timestamp before saving.
 		**/
 		override public function update() {
 			if (validate()) {
-				modified = Date.now();
 				super.update();
-			}
-			else {
+			} else {
 				var errors = Lambda.array(validationErrors).join(", ");
 				throw 'Data validation failed for $this: ' + errors;
 			}
@@ -120,7 +106,6 @@ class Object #if server extends sys.db.Object #end {
 		 * If `id` is null, then it needs to be inserted.
 		 * If `id` already exists, try to update first.
 		 * If that throws an error, it means that it is not inserted yet, so then insert it.
-		 * Updates the "created" and "modified" timestamps as required.
 		**/
 		public function save() {
 			if (id == null) {
@@ -294,10 +279,7 @@ class Object #if server extends sys.db.Object #end {
 
 		var fields:Array<String> = cast Meta.getType(Type.getClass(this)).ufSerialize;
 		for (f in fields) {
-			if (f == "modified" || f == "created") {
-				var date=Reflect.field(this, f);
-				s.serialize((date!=null) ? date.getTime() : null);
-			} else if (f.startsWith("ManyToMany")) {
+			if (f.startsWith("ManyToMany")) {
 				var m2m:ManyToMany<Dynamic,Dynamic> = Reflect.field(this, f.substr(10));
 				if (m2m!=null) {
 					s.serialize(Type.getClassName(m2m.b));
@@ -338,11 +320,7 @@ class Object #if server extends sys.db.Object #end {
 	function hxUnserialize( s : haxe.Unserializer ) {
 		var fields:Array<String> = cast Meta.getType(Type.getClass(this)).ufSerialize;
 		for (f in fields) {
-			if (f == "modified" || f == "created") {
-				var time:Null<Float> = s.unserialize();
-				Reflect.setProperty(this, f, (time!=null) ? Date.fromTime(time) : Date.now());
-			}
-			else if (f.startsWith("ManyToMany")) {
+			if (f.startsWith("ManyToMany")) {
 				var bName:String = s.unserialize();
 				var relationClassName:String = s.unserialize();
 				var tableName:String = s.unserialize();

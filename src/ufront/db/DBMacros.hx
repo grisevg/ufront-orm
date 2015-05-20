@@ -132,7 +132,7 @@ class DBMacros
 			fields.push( validateFunction );
 
 			// Loop all fields,
-			var ignoreList = ["new", "validate", "id", "created", "modified"];
+			var ignoreList = ["new", "validate", "id"];
 			var validateFnNames = [];
 			var numNullChecks = 1;
 			for (f in fields.copy())

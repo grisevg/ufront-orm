@@ -201,7 +201,6 @@ class ManyToMany<A:Object, B:Object> {
 					FROM `$tableName`
 					JOIN $bTableName ON `$tableName`.$bColumn=$bTableName.id
 					WHERE `$tableName`.$aColumn=${Manager.quoteAny(id)}
-					ORDER BY $tableName.modified ASC
 				', false);
 				bListIDs = bList.map(function (b:B) return b.id);
 			} else {
