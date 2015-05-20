@@ -93,6 +93,7 @@ class ManyToMany<A:Object, B:Object> {
 	var bList:List<B>;
 	var bListIDs:List<Int>;
 	var unsavedBObjects:Null<List<B>>;
+	var relationClass:Class<Relationship>;
 
 	/** The number of related objects. **/
 	public var length(get,null):Int;
@@ -100,6 +101,8 @@ class ManyToMany<A:Object, B:Object> {
 	#if server
 		static var managers:StringMap<Manager<Relationship>> = new StringMap();
 		var tableName:String;
+		var aColumn:String;
+		var bColumn:String;
 		var bManager:Manager<B>;
 		var manager:Manager<Relationship>;
 	#end
@@ -111,17 +114,27 @@ class ManyToMany<A:Object, B:Object> {
 		@param bClass - The model of related objects you are joining with.
 		@param initialise - Whether to fetch the current list of related objects immediately (server only, default is true).
 	**/
-	public function new(aObject:A, bClass:Class<B>, ?initialise=true) {
-		if ( aObject==null )
-			throw 'Error creating ManyToMany: aObject must not be null';
+	public function new(
+		aObject:A,
+		bClass:Class<B>,
+		relationClass:Class<Relationship>,
+		?customTable:String,
+		?customAColumn:String,
+		?customBColumn:String,
+		?initialise=true
+	) {
+		if ( aObject==null ) throw 'Error creating ManyToMany: aObject must not be null';
 		
 		this.aObject = aObject;
 		this.b = bClass;
 		#if server
 			this.a = Type.getClass(aObject);
 			bManager = untyped bClass.manager;
-			this.tableName = generateTableName(a,b);
-			this.manager = getManager(tableName);
+			this.relationClass = relationClass;
+			this.tableName = (customTable != null) ? customTable : generateTableName(a,b);
+			this.aColumn = (customAColumn != null) ? customAColumn : (Type.getClassName(a).split('.').pop() + "_id");
+			this.bColumn = (customBColumn != null) ? customBColumn : (Type.getClassName(b).split('.').pop() + "_id");
+			this.manager = getManager(tableName, relationClass);
 			this.unsavedBObjects = new List();
 			if (initialise) {
 				refreshList();
@@ -137,6 +150,14 @@ class ManyToMany<A:Object, B:Object> {
 		#end
 	}
 
+	public static function generateTableName(aClass:Class<Dynamic>, bClass:Class<Dynamic>):String
+	{
+		var arr = [Type.getClassName(aClass).split('.').pop(), Type.getClassName(bClass).split('.').pop()];
+		arr.sort(function(x,y) return Reflect.compare(x,y));
+		var joinedName = arr.join('_');
+		return "_join_" + joinedName;
+	}
+
 	public inline function first() return bList.first();
 	public inline function isEmpty() return bList.isEmpty();
 	public inline function join(sep) return bList.join(sep);
@@ -148,112 +169,42 @@ class ManyToMany<A:Object, B:Object> {
 
 	#if server
 		@:access(sys.db.Manager)
-		static function getManager(tableName:String):Manager<Relationship> {
+		static function getManager(tableName:String, relationClass:Class<Relationship>):Manager<Relationship> {
 			var m;
 			if (managers.exists(tableName)) {
 				m = managers.get(tableName);
-			}
-			else {
+			} else {
 				// PHP requires us to explicitly call Relationship.manager for the metadata to be included in compilation.
 				// We don't have to (or want to) do anything with it, just make sure the metadata is attached to the Relationship object.
 				#if php
 					Relationship.manager;
 				#end
-				m = new Manager(Relationship);
-				m.table_infos.name = tableName;
-				m.table_name = m.quoteField(tableName);
+				m = new Manager(relationClass);
 				managers.set(tableName, m);
 			}
 			return m;
 		}
 
-		static function isABeforeB(a,b) {
-			// Get the names (class name, last section after package list)
-			var aName = Type.getClassName(a).split('.').pop();
-			var bName = Type.getClassName(b).split('.').pop();
-			var arr = [aName,bName];
-			arr.sort(function(x,y) return Reflect.compare(x,y));
-			return (arr[0] == aName);
-		}
-
 		/**
-			Generate the table name used to join these two classes.
-		**/
-		static public function generateTableName(a:Class<Dynamic>, b:Class<Dynamic>) {
-			// Get the names (class name, last section after package list)
-			var aName = Type.getClassName(a).split('.').pop();
-			var bName = Type.getClassName(b).split('.').pop();
-
-			// Sort the names alphabetically, so we don't end up with 2 join tables...
-			var arr = [aName,bName];
-			arr.sort(function(x,y) return Reflect.compare(x,y));
-
-			// Join the names - eg join_SchoolClass_Student
-			arr.unshift("_join");
-			return arr.join('_');
-		}
-		
-		/**
-			Create a join table for the two classes if it does not exist already.
-		**/
-		public static function createJoinTable( aModel:Class<Object>, bModel:Class<Object> ) {
-			var tableName = generateTableName( aModel, bModel );
-			var manager = getManager( tableName );
-			if ( TableCreate.exists(manager)==false )
-				TableCreate.create( manager );
-		}
-
-		/**
-			A function to at once retrieve the related IDs of several objects.
-			
-			@param aModel The model for the object IDs you have
-			@param bModel The model the the related object IDs you want to fetch
-			@param aObjectIDs The specific models you want to get.  If not supplied, we'll get a map of ALL manyToMany relationships between these two models.
-			@return An IntMap, where the key is aObjectID, and the value is a list of related bObjectIDs
-		**/
-		public static function relatedIDsforObjects(aModel:Class<Object>, bModel:Class<Object>, ?aObjectIDs:Iterable<SUId>):IntMap<List<Int>> {
-			// Set up
-			var aBeforeB = isABeforeB(aModel,bModel);
-			var tableName = generateTableName(aModel,bModel);
-			var manager = getManager(tableName);
-			var aColumn = (aBeforeB) ? "r1" : "r2";
-
-			// Fetch the relationships
-			var relationships;
-			if (aObjectIDs == null)
-				relationships = manager.all();
-			else
-				relationships = manager.unsafeObjects("SELECT * FROM `" + tableName + "` WHERE " + Manager.quoteList(aColumn, aObjectIDs) + " ORDER BY modified ASC", false);
-
-			// Put them into an Intmap
-			var intMap = new IntMap<List<Int>>();
-			for (r in relationships) {
-				var aID = (aBeforeB) ? r.r1 : r.r2;
-				var bID = (aBeforeB) ? r.r2 : r.r1;
-				var list = intMap.get(aID);
-				if (list == null) intMap.set(aID, list = new List());
-				list.add(bID);
-			}
-			return intMap;
-		}
-
-		/**
-			Fetch the related objects from the database.
-			If `aObject` does not have an ID, then it will just have an empty list for now.
-			Any outstanding operations (`add` or `remove` operations that have not yet been committed to the database) will be lost.
-		**/
+		 * Fetch the related objects from the database.
+		 * If `aObject` does not have an ID, then it will just have an empty list for now.
+		 * Any outstanding operations (`add` or `remove` operations that have not yet been committed to the database) will be lost.
+		 */
 		@:access(sys.db.Manager)
 		public function refreshList() {
 			unsavedBObjects.clear();
-			if ( aObject.id!=null ) {
+			if (aObject.id != null) {
 				var id = aObject.id;
 				var bTableName = bManager.table_name; // Already has quotes.
-				var aColumn = (isABeforeB(a,b)) ? "r1" : "r2";
-				var bColumn = (isABeforeB(a,b)) ? "r2" : "r1";
-				bList = bManager.unsafeObjects('SELECT $bTableName.* FROM `$tableName` JOIN $bTableName ON `$tableName`.$bColumn=$bTableName.id WHERE `$tableName`.$aColumn=${Manager.quoteAny(id)} ORDER BY $tableName.modified ASC', false);
+				bList = bManager.unsafeObjects('
+					SELECT $bTableName.*
+					FROM `$tableName`
+					JOIN $bTableName ON `$tableName`.$bColumn=$bTableName.id
+					WHERE `$tableName`.$aColumn=${Manager.quoteAny(id)}
+					ORDER BY $tableName.modified ASC
+				', false);
 				bListIDs = bList.map(function (b:B) return b.id);
-			}
-			else {
+			} else {
 				bList = new List();
 				bListIDs = new List();
 			}
@@ -266,80 +217,78 @@ class ManyToMany<A:Object, B:Object> {
 		**/
 		function compileBList() {
 			var bTableName = @:privateAccess bManager.table_name; // Already has quotes.
-			if ( bListIDs!=null )
-				// bList = bManager.search( $id in bListIDs );
-				bList = bManager.unsafeObjects( 'SELECT * FROM $bTableName WHERE '+Manager.quoteList('id',bListIDs), false );
-			else
+			if (bListIDs != null) {
+				bList = bManager.unsafeObjects('SELECT * FROM $bTableName WHERE ${Manager.quoteList('id',bListIDs)}', false );
+			} else {
 				bList = new List();
-			
+			}
+
 			for ( newObj in unsavedBObjects ) {
-				this.bList.add( newObj );
+				bList.add(newObj);
 			}
 		}
 		
 		/**
-			Resolves any differences between the joins represented here and the joins in the database.
-			Most actions (`add`, `remove`, `setList` etc) apply to the database immediately if a) we're on the server and b) both objects have an ID.
-			If one of the joint objects is unsaved, or if we're on the client, then we might have a situation where our list here is out of sync with our list on the server.
-			Calling this will add or remove joins from the database to match our current state.
-			Please note if some of your objects are *still* unsaved, they will still remain unsaved.
-		**/
+		 * Resolves any differences between the joins represented here and the joins in the database.
+		 * Most actions (`add`, `remove`, `setList` etc) apply to the database immediately if a) we're on the server and b) both objects have an ID.
+		 * If one of the joint objects is unsaved, or if we're on the client, then we might have a situation where our list here is out of sync with our list on the server.
+		 * Calling this will add or remove joins from the database to match our current state.
+		 * Please note if some of your objects are *still* unsaved, they will still remain unsaved.
+		 */
 		public function commitJoins() {
-			setList( bList.list() );
+			setList(bList.list());
 			unsavedBObjects.clear();
 		}
 	#end
 
 	/**
-		Add a related object by creating a new Relationship on the appropriate join table.
-		If either aObject or bObject have no ID, we will add them to our local list, and they will be updated when saving.
-		If the object already has a relationship in the join table, it will be ignored.
-	**/
+	 * Add a related object by creating a new Relationship on the appropriate join table.
+	 * If either aObject or bObject have no ID, we will add them to our local list, and they will be updated when saving.
+	 * If the object already has a relationship in the join table, it will be ignored.
+	 */
 	@:access( sys.db )
-	public function add(bObject:B) {
-		if (bObject!=null && bList.has(bObject)==false) {
+	public function add(bObject:B, unique:Bool = true) {
+		if (bObject!=null && (!unique || bList.has(bObject) == false)) {
 			bList.add(bObject);
 			var server = #if server true #else false #end;
-			if (server && aObject.id!=null && bObject.id!=null) {
-				#if server
-					var r = if (isABeforeB(a,b)) new Relationship(aObject.id, bObject.id);
-							else                 new Relationship(bObject.id, aObject.id);
-					getManager(tableName).doInsert(r);
-					unsavedBObjects.remove(bObject);
-				#end
-			}
-			else {
+			if (server && aObject.id != null && bObject.id != null) {
+				var r:Relationship = Type.createInstance(relationClass, [aObject.id, bObject.id]);
+				getManager(tableName, relationClass).doInsert(r);
+				unsavedBObjects.remove(bObject);
+			} else {
 				function reAdd() {
 					if ( unsavedBObjects.has(bObject) ) {
 						bList.remove( bObject );
 						add( bObject );
 					}
 				}
-				aObject.saved.handle( reAdd );
-				bObject.saved.handle( reAdd );
-				if ( unsavedBObjects.has(bObject)==false )
-					unsavedBObjects.add( bObject );
+				aObject.saved.handle(reAdd);
+				bObject.saved.handle(reAdd);
+
+				if (!unsavedBObjects.has(bObject)) {
+					unsavedBObjects.add(bObject);
+				}
 			}
 		}
 	}
 
 	/**
-		Remove the relationship/join between our `aObject` and a particular `bObject`.
-		
-		If `bObject` is null this will have no effect.
-		If `aObject` or `bObject` have no ID, then the `bObject` will be removed from the local list, but no database query will be executed.
-	**/
+	 * Remove the relationship/join between our `aObject` and a particular `bObject`.
+	 *
+	 * If `bObject` is null this will have no effect.
+	 * If `aObject` or `bObject` have no ID, then the `bObject` will be removed from the local list, but no database query will be executed.
+	 */
 	public function remove(bObject:B) {
-		if (bObject!=null) {
+		if (bObject != null) {
 			bList.remove(bObject);
 			#if server
-				var aColumn = (isABeforeB(a,b)) ? "r1" : "r2";
-				var bColumn = (isABeforeB(a,b)) ? "r2" : "r1";
 				if ( aObject.id!=null && bObject.id!=null ) {
 					// manager.delete($a == aObject.id && $b == bObject.id);
-					manager.unsafeDelete("DELETE FROM `" + tableName + "` WHERE " + aColumn + " = " + Manager.quoteAny(aObject.id) + " AND " + bColumn + " = " + Manager.quoteAny(bObject.id));
-				}
-				else {
+					manager.unsafeDelete('
+						DELETE FROM `$tableName`
+						WHERE $aColumn = ${Manager.quoteAny(aObject.id)} AND $bColumn = ${Manager.quoteAny(bObject.id)}
+					');
+				} else {
 					// Because one of the IDs was null, the joins were never saved, so we don't have to clear them.
 				}
 			#end
@@ -347,30 +296,27 @@ class ManyToMany<A:Object, B:Object> {
 	}
 
 	/**
-		Remove all relationships between our `aObject` and any `bObjects`.
-		If our `aObject` has no id, then no database call will be made.
-	**/
+	 * Remove all relationships between our `aObject` and any `bObjects`.
+	 * If our `aObject` has no id, then no database call will be made.
+	 */
 	public function clear() {
 		bList.clear();
 		unsavedBObjects.clear();
 		#if server
-			if ( aObject.id!=null ) {
-				var aColumn = (isABeforeB(a,b)) ? "r1" : "r2";
-				// manager.delete($a == aObject.id);
-				manager.unsafeDelete("DELETE FROM `" + tableName + "` WHERE " + aColumn + " = " + Manager.quoteAny(aObject.id));
-			}
-			else {
+			if (aObject.id != null) {
+				manager.unsafeDelete('DELETE FROM `$tableName` WHERE $aColumn = ${Manager.quoteAny(aObject.id)}');
+			} else {
 				// Because aObject was never saved, the joins were never saved, so we don't have to clear them.
 			}
 		#end
 	}
 
 	/**
-		Set the list of related B objects.
-		Any objects that were not previously related will have a relationship added with `this.add()`
-		Any objects that were previously related and are in `newBList` will not be affected.
-		Any objects that were previously related and are not in `newBList` will have `this.remove()` called so they are no longer related.
-	**/
+	 * Set the list of related B objects.
+	 * Any objects that were not previously related will have a relationship added with `this.add()`
+	 * Any objects that were previously related and are in `newBList` will not be affected.
+	 * Any objects that were previously related and are not in `newBList` will have `this.remove()` called so they are no longer related.
+	 */
 	public function setList(newBList:Iterable<B>) {
 		// Get rid of old ones
 		for (oldB in bList) {

@@ -1,10 +1,13 @@
 package ufront.db;
-import haxe.macro.Context;
+
 import haxe.macro.Compiler;
+import haxe.macro.Context;
 import haxe.macro.Expr;
 import haxe.macro.Type;
-import sys.db.RecordMacros;
+import tink.core.Outcome;
+import tink.macro.Metadatas;
 import ufront.util.BuildTools;
+
 using tink.MacroApi;
 using StringTools;
 using Lambda;
@@ -597,6 +600,36 @@ class DBMacros
 
 		static function processManyToManyRelations(fields:Array<Field>, f:Field, modelA:TypePath, modelB:TypePath)
 		{
+			//Get custom name for join table passed through meta @:joinTable("custom_name")
+			var joinTableMeta:Array<Array<Expr>> = Metadatas.getValues(f.meta, ":joinTable");
+			var joinTable:String = null;
+			if (joinTableMeta.length != 0) {
+				if (joinTableMeta.length == 1 && joinTableMeta[0].length == 1) {
+					var joinTableParam:Outcome<String, tink.core.Error> = Exprs.getString(joinTableMeta[0][0]);
+					if (joinTableParam.isSuccess()) {
+						joinTable = joinTableParam.sure();
+					}
+				}
+				if (joinTable == null) {
+					error('On field `${f.name}`: Wrong usage of :joinTable("tablename")', f.pos);
+				}
+			}
+			//Get custom field names for join table passed through meta @:joinFields("a_id", "b_id")
+			var fieldsMeta:Array<Array<Expr>> = Metadatas.getValues(f.meta, ":joinFields");
+			var aField:String = null;
+			var bField:String = null;
+			if (fieldsMeta.length != 0) {
+				if (fieldsMeta.length == 1 && fieldsMeta[0].length == 2) {
+					var aFieldParam:Outcome<String, tink.core.Error> = Exprs.getString(fieldsMeta[0][0]);
+					var bFieldParam:Outcome<String, tink.core.Error> = Exprs.getString(fieldsMeta[0][1]);
+					if (aFieldParam.isSuccess()) aField = aFieldParam.sure();
+					if (bFieldParam.isSuccess()) bField = bFieldParam.sure();
+				}
+				if (aField == null || bField == null) {
+					error('On field `${f.name}`: Wrong usage of @:joinFields("a_id", "b_id")', f.pos);
+				}
+			}
+
 			// Add skip metadata to the field
 			f.meta.push({ name: ":skip", params: [], pos: f.pos });
 			f.meta.push({ name: ":includeInSerialization", params: [], pos: f.pos });
@@ -615,28 +648,38 @@ class DBMacros
 				case _: error('On field `${f.name}`: ManyToMany can only be used with a normal var, not a property or a function.', f.pos);
 			};
 
-			// Get the various exprs used in the getter
+			// Same logic as ManyToMany.generateTableName(a,b)
+			var arr = [modelA.name, modelB.name];
+			arr.sort(function(x,y) return Reflect.compare(x,y));
+			var joinedName = arr.join('_');
+			var modelName = "Join_" + joinedName;
+			var pack = ["ufront","db","joins"];
 
+			// Get the various exprs used in the getter
 			var ident = (f.name).resolve();
 
 			// create getter
-
 			var getterBody:Expr;
 			var bModelPath = nameFromTypePath(modelB);
 			var bModelIdent = bModelPath.resolve();
-			if (Context.defined("server"))
-			{
+			if (Context.defined("server")) {
 				getterBody = macro {
-					if ($ident == null) $ident = new ManyToMany(this, $bModelIdent);
+					if ($ident == null) {
+						$ident = new ManyToMany(
+							this,
+							$bModelIdent,
+							$p{pack.concat([modelName])},
+							$v{joinTable},
+							$v{aField},
+							$v{bField}
+						);
+					}
 					if ($ident.bList == null) $ident.compileBList();
 					return $ident;
 				};
-			}
-			else
-			{
+			} else {
 				getterBody = macro {
-					if ($ident.bList == null)
-					{
+					if ($ident.bList == null) {
 						$ident.bList = new List();
 						#if ufront_clientds
 							var p = $bModelIdent.clientDS.getMany(Lambda.array($ident.bListIDs));
@@ -673,42 +716,30 @@ class DBMacros
 				access: [APrivate]
 			});
 
-			// Define a type for this relationship, so that a table is created by spodadmin correctly
-			var relationshipModelTP:TypePath = {
-				sub: null,
-				params: [],
-				pack: ["ufront","db"],
-				name: "Relationship"
-			};
-
-			// Same logic as ManyToMany.generateTableName(a,b)
-			var arr = [modelA.name,modelB.name];
-			arr.sort(function(x,y) return Reflect.compare(x,y));
-			var joinedName = arr.join('_');
-			var tableName = "_join_" + joinedName;
-			var modelName = "Join_" + joinedName;
+			var tableName = (joinTable != null) ? joinTable : "_join_" + joinedName;
 			var tableNameExpr = tableName.toExpr();
-			var pack = ["ufront","db","joins"];
 
 			// Create the model if it doesn't already exist
-			var className = pack.join(".") + "." + modelName;
-			if ( !manyToManyModels.has(className) )
-			{
-				manyToManyModels.push(className);
-				Context.defineType({
+			var fullClassName = pack.join(".") + "." + modelName;
+			if ( !manyToManyModels.has(fullClassName) ) {
+				manyToManyModels.push(fullClassName);
+				var newClass = macro class REPLACE_ME extends ufront.db.Relationship {
+					public var $aField:String;
+					public var $bField:String;
+					public function new($aField:String, $bField:String) {
+						super();
+						$p{["this", aField]} = $i{aField};
+						$p{["this", bField]} = $i{bField};
+					}
+				};
+				newClass.pack = pack; //Set package
+				newClass.meta = [{ //Set @:table meta
 					pos: Context.currentPos(),
-					params: [],
-					pack: pack,
-					name: modelName,
-					meta: [{
-						pos: Context.currentPos(),
-						name: ":table",
-						params: [ macro $tableNameExpr ]
-					}],
-					kind: TDClass( relationshipModelTP ),
-					isExtern: false,
-					fields: []
-				});
+					name: ":table",
+					params: [ macro $tableNameExpr ]
+				}];
+				newClass.name = modelName; //Replacing class name
+				Context.defineType(newClass);
 			}
 
 			return fields;
@@ -719,42 +750,41 @@ class DBMacros
 			var relationKey:String = null;
 			var relationKeyMeta = getMetaFromField(f, cf, ":relationKey");
 
-			if (relationKeyMeta != null)
-			{
+			if (relationKeyMeta != null) {
 				// If there is @:relationKey(nameOfBelongsToField) metadata, use that
 				var rIdent = relationKeyMeta[0];
-				switch (rIdent.expr)
-				{
+				switch (rIdent.expr) {
 					case EConst(CIdent(r)):
 						relationKey = r;
 					case _:
-						Context.fatalError( 'Unable to understand @:relationKey metadata on field ${f.name}.\nPlease use a simple field name without the quotation marks.', f.pos );
+						Context.fatalError('
+							Unable to understand @:relationKey metadata on field ${f.name}.
+							Please use a simple field name without the quotation marks.
+						', f.pos );
 				}
-			}
-			else
-			{
+			} else {
 				// If not, guess at the name. From "SomeClass" model get "someClassID" name
 				relationKey = className.charAt(0).toLowerCase() + className.substr(1) + "ID";
 			}
 			return relationKey;
 		}
 
-		static function getMetaFromField(?f:Field, ?cf:ClassField, name:String)
+		static function getMetaFromField(?f:Field, ?cf:ClassField, name:String):Array<Expr>
 		{
 			var metadata:Metadata;
 
 			if (f != null) metadata = f.meta;
 			if (cf != null) metadata = cf.meta.get();
 
-			if ( metadata!=null )
-				for (metaItem in metadata)
-				{
+			if ( metadata!=null ) {
+				for (metaItem in metadata) {
 					if (metaItem.name == name) return metaItem.params;
 				}
+			}
 			return null;
 		}
 
-		static function nameFromTypePath(t:TypePath)
+		static function nameFromTypePath(t:TypePath):String
 		{
 			return (t.pack.length == 0) ? t.name : (t.pack.join(".") + "." + t.name);
 		}

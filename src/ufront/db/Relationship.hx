@@ -6,14 +6,9 @@ import sys.db.Types;
 @noTable
 class Relationship extends Object
 {
-	public var r1:SUInt;
-	public var r2:SUInt;
-
-	public function new(r1:Int, r2:Int)
+	public function new()
 	{
 		super();
-		this.r1 = r1;
-		this.r2 = r2;
 		this.modified = this.created = Date.now();
 	}
 }

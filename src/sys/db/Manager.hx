@@ -351,6 +351,9 @@ class Manager<T : Object> {
 	}
 
 	function unsafeExecute( sql : String ) {
+		#if ormdebug
+		trace(sql);
+		#end
 		return getCnx().request(sql);
 	}
 
