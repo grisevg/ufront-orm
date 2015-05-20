@@ -3,3 +3,5 @@ doc/
 linked-projects/
 *.db3
 *.zip
+/.idea/
+/*.iml
