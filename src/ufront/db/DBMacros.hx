@@ -322,6 +322,9 @@ class DBMacros
 
 		static function processBelongsToRelations(fields:Array<Field>, f:Field, modelType:TypePath, allowNull:Bool)
 		{
+			var idIdentStr = getRelationKeyForField(Context.getLocalClass().get().name,f);
+			var idIdent = idIdentStr.resolve();
+
 			// Add skip metadata to the field
 			f.meta.push({ name: ":skip", params: [], pos: f.pos });
 
@@ -346,7 +349,7 @@ class DBMacros
 			}
 			fields.push({
 				pos: f.pos,
-				name: f.name + "ID",
+				name: idIdentStr,
 				meta: [],
 				kind: FVar(idType),
 				doc: 'The unique ID for field `${f.name}`.  This is what is actually stored in the database',
@@ -380,10 +383,8 @@ class DBMacros
 			}
 
 			// Add the getter
-
 			var getterBody:Expr;
 			var privateIdent = (f.name).resolve();
-			var idIdent = (f.name + "ID").resolve();
 			var modelPath = nameFromTypePath(modelType);
 			var model = modelPath.resolve();
 			if (Context.defined("server"))
@@ -648,6 +649,11 @@ class DBMacros
 				case _: error('On field `${f.name}`: ManyToMany can only be used with a normal var, not a property or a function.', f.pos);
 			};
 
+			// Set default names for columns
+			// Same logic as in ManyToMany constructor
+			if (aField == null ) aField = modelA.name + "_id";
+			if (bField == null ) bField = modelB.name + "_id";
+
 			// Same logic as ManyToMany.generateTableName(a,b)
 			var arr = [modelA.name, modelB.name];
 			arr.sort(function(x,y) return Reflect.compare(x,y));
@@ -723,10 +729,13 @@ class DBMacros
 			var fullClassName = pack.join(".") + "." + modelName;
 			if ( !manyToManyModels.has(fullClassName) ) {
 				manyToManyModels.push(fullClassName);
+				//Ids are passed based on alphabetical order of the field names.
+				var firstField = aField < bField ? aField : bField;
+				var secondField = aField < bField ? bField : aField;
 				var newClass = macro class REPLACE_ME extends ufront.db.Relationship {
 					public var $aField:String;
 					public var $bField:String;
-					public function new($aField:String, $bField:String) {
+					public function new($firstField:String, $secondField:String) {
 						super();
 						$p{["this", aField]} = $i{aField};
 						$p{["this", bField]} = $i{bField};

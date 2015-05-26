@@ -251,7 +251,10 @@ class ManyToMany<A:Object, B:Object> {
 			bList.add(bObject);
 			var server = #if server true #else false #end;
 			if (server && aObject.id != null && bObject.id != null) {
-				var r:Relationship = Type.createInstance(relationClass, [aObject.id, bObject.id]);
+				//Ids are passed based on alphabetical order of the field names.
+				var firstId = (aColumn < bColumn) ? aObject.id : bObject.id;
+				var secondId = (aColumn < bColumn) ? bObject.id : aObject.id;
+				var r:Relationship = Type.createInstance(relationClass, [firstId, secondId]);
 				getManager(tableName, relationClass).doInsert(r);
 				unsavedBObjects.remove(bObject);
 			} else {
