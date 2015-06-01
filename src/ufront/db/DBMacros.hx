@@ -497,6 +497,12 @@ class DBMacros
 			var setterName = 'set_${f.name}';
 			var relationKey = getRelationKeyForField(Context.getLocalClass().get().name,f);
 			var modelPath = nameFromTypePath(modelType);
+			var orderBy = getMetaFromField(f, ":orderBy");
+			var orderByStr = "";
+			if (orderBy != null && orderBy.length >  0) {
+				if (orderBy.length != 1) throw "Wrong usage of :orderBy";
+				orderByStr = ' ORDER BY `${Exprs.getIdent(orderBy[0]).sure()}`';
+			}
 			var model = modelPath.resolve();
 			
 			// Use reification to create the private field, the getter and the setter.
@@ -507,7 +513,10 @@ class DBMacros
 						if ($privateIdent == null) {
 							var quotedID = sys.db.Manager.quoteAny(this.id);
 							var table = untyped $model.manager.table_name;
-							$privateIdent = $model.manager.unsafeObjects('SELECT * FROM ' + table + ' WHERE '+$v{relationKey}+' = '+quotedID, null);
+							$privateIdent = $model.manager.unsafeObjects(
+								'SELECT * FROM ' + table + ' WHERE '+$v{relationKey}+' = '+quotedID + $v{orderByStr},
+								null
+							);
 						}
 					#elseif ufront_clientds
 						if ($privateIdent == null) {
@@ -777,6 +786,7 @@ class DBMacros
 			}
 			return relationKey;
 		}
+
 
 		static function getMetaFromField(?f:Field, ?cf:ClassField, name:String):Array<Expr>
 		{
