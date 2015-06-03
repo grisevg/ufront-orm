@@ -1,7 +1,8 @@
 package ufront.db;
 
 #if server
-	import sys.db.Manager;
+import Reflect;
+import sys.db.Manager;
 	import sys.db.TableCreate;
 #end
 import sys.db.Types;
@@ -129,7 +130,7 @@ class ManyToMany<A:Object, B:Object> {
 		this.b = bClass;
 		#if server
 			this.a = Type.getClass(aObject);
-			bManager = untyped bClass.manager;
+			bManager = Reflect.field(bClass, "manager");
 			this.relationClass = relationClass;
 			this.tableName = (customTable != null) ? customTable : generateTableName(a,b);
 			this.aColumn = (customAColumn != null) ? customAColumn : (Type.getClassName(a).split('.').pop() + "_id");

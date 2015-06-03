@@ -62,10 +62,10 @@ using tink.CoreApi;
 class Object #if server extends sys.db.Object #end {
 	
 	/** A default ID. Auto-incrementing 32-bit Int. **/
-	public var id:SId;
+	public var id:Null<SId>;
 	
 	/** A signal that is triggered after a successful save. **/
-	@:skip public var saved(get,null):Signal<Noise>;
+	@:skip public var saved(get,null):Null<Signal<Noise>>;
 	@:skip var savedTrigger:SignalTrigger<Noise>;
 
 	#if server

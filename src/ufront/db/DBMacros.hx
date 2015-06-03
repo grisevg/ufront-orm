@@ -333,20 +333,7 @@ class DBMacros
 			// LATER:
 				// base the name of the ident in our metadata
 				// figure out the type by analysing the type given in our field, opening the class, and looking for @:id() metadata or id:SId or id:SUId
-			var idType:ComplexType;
-			if (allowNull)
-			{
-				idType = TPath({
-					sub: null,
-					params: [TPType("sys.db.Types.SUInt".asComplexType())],
-					pack: [],
-					name: "Null"
-				});
-			}
-			else
-			{
-				idType = "sys.db.Types.SUInt".asComplexType();
-			}
+			var idType:ComplexType = macro : Null<sys.db.Types.SUInt>;
 			fields.push({
 				pos: f.pos,
 				name: idIdentStr,
@@ -366,21 +353,12 @@ class DBMacros
 
 			// Get the type signiature we're using
 			// generally _fieldName:T or _fieldName:Null<T>
-
-			var modelTypeSig:ComplexType = null;
-			if (allowNull)
-			{
-				modelTypeSig = TPath({
-					sub: null,
-					params: [TPType(TPath(modelType))],
-					pack: [],
-					name: "Null"
-				});
-			}
-			else
-			{
-				modelTypeSig = TPath(modelType);
-			}
+			var modelTypeSig:ComplexType = TPath({
+				sub: null,
+				params: [TPType(TPath(modelType))],
+				pack: [],
+				name: "Null"
+			});
 
 			// Add the getter
 			var getterBody:Expr;
@@ -515,7 +493,7 @@ class DBMacros
 							var table = untyped $model.manager.table_name;
 							$privateIdent = $model.manager.unsafeObjects(
 								'SELECT * FROM ' + table + ' WHERE '+$v{relationKey}+' = '+quotedID + $v{orderByStr},
-								null
+								false
 							);
 						}
 					#elseif ufront_clientds
