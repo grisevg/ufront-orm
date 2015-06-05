@@ -26,7 +26,8 @@ class DBMacros
 			for ( t in types ) {
 				switch t {
 					case TInst(tRef,params) if (tRef.toString()==localClass.toString()):
-						addSerializationMetadata(tRef.get());
+						// HACK crashes on native targets
+						// addSerializationMetadata(tRef.get());
 					default:
 				}
 			}
