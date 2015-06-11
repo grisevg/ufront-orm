@@ -55,8 +55,8 @@ class Manager<T : Object> {
 	/* ---------------------------- BASIC API ----------------------------- */
 
 	var table_infos : RecordInfos;
-	var table_name : String;
-	var table_keys : Array<String>;
+	public var table_name(default, null): String;
+	public var table_keys(default, null): Array<String>;
 	var class_proto : { prototype : Dynamic };
 
 	public function new( classval : Class<T> ) {
@@ -104,6 +104,16 @@ class Manager<T : Object> {
 		s.add(" WHERE ");
 		addCondition(s,x);
 		return unsafeObjects(s.toString(),lock);
+	}
+
+	public function dynamicSelect( x : {}, ?lock : Bool ) : T {
+		var s = new StringBuf();
+		s.add("SELECT * FROM ");
+		s.add(table_name);
+		s.add(" WHERE ");
+		addCondition(s,x);
+		s.add(" LIMIT 1 ");
+		return unsafeObject(s.toString(),lock);
 	}
 
 	function quote( s : String ) : String {
