@@ -603,6 +603,22 @@ class DBMacros
 					error('On field `${f.name}`: Wrong usage of :joinTable("tablename")', f.pos);
 				}
 			}
+
+			//Get custom order expression passed through meta @:orderBy("`join_table.position` ASC")
+			var orderByMeta:Array<Array<Expr>> = Metadatas.getValues(f.meta, "orderBy");
+			var orderBy:String = null;
+			if (orderByMeta.length != 0) {
+				if (orderByMeta.length == 1 && orderByMeta[0].length == 1) {
+					var orderByParam:Outcome<String, tink.core.Error> = Exprs.getString(orderByMeta[0][0]);
+					if (orderByParam.isSuccess()) {
+						orderBy = orderByParam.sure();
+					}
+				}
+				if (orderBy == null) {
+					error('On field `${f.name}`: Wrong usage of :orderBy("`join_table.position` ASC")', f.pos);
+				}
+			}
+
 			//Get custom field names for join table passed through meta @:joinFields("a_id", "b_id")
 			var fieldsMeta:Array<Array<Expr>> = Metadatas.getValues(f.meta, ":joinFields");
 			var aField:String = null;
@@ -665,7 +681,8 @@ class DBMacros
 							$p{pack.concat([modelName])},
 							$v{joinTable},
 							$v{aField},
-							$v{bField}
+							$v{bField},
+							$v{orderBy}
 						);
 					}
 					if ($ident.bList == null) $ident.compileBList();

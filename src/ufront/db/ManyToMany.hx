@@ -106,6 +106,7 @@ class ManyToMany<A:Object, B:Object> {
 		var bColumn:String;
 		var bManager:Manager<B>;
 		var manager:Manager<Relationship>;
+		var orderBy:Null<String>;
 	#end
 
 	/**
@@ -122,12 +123,14 @@ class ManyToMany<A:Object, B:Object> {
 		?customTable:String,
 		?customAColumn:String,
 		?customBColumn:String,
+		?orderBy:String,
 		?initialise=true
 	) {
 		if ( aObject==null ) throw 'Error creating ManyToMany: aObject must not be null';
 		
 		this.aObject = aObject;
 		this.b = bClass;
+		this.orderBy = orderBy;
 		#if server
 			this.a = Type.getClass(aObject);
 			bManager = Reflect.field(bClass, "manager");
@@ -202,6 +205,7 @@ class ManyToMany<A:Object, B:Object> {
 					FROM `$tableName`
 					JOIN $bTableName ON `$tableName`.$bColumn=$bTableName.id
 					WHERE `$tableName`.$aColumn=${Manager.quoteAny(id)}
+					${orderBy != null ? "ORDER BY " + orderBy : ""}
 				', false);
 				bListIDs = bList.map(function (b:B) return b.id);
 			} else {
